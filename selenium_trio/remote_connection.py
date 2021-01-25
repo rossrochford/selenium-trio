@@ -248,7 +248,7 @@ class AsyncFirefoxRemoteConnection(FirefoxRemoteConnection):
         self._url = remote_server_addr
         # removed: self._proxy_url = self._get_proxy_url()
 
-        timeout = httpx.Timeout(12.0, connect_timeout=30.0)
+        timeout = httpx.Timeout(12.0, connect=30.0)
         self.http_session = httpx.AsyncClient(timeout=timeout)
 
         # removed: self._conn = self._get_connection_manager()

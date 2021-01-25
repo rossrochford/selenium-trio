@@ -7,6 +7,7 @@ import warnings
 import httpx
 from selenium import webdriver
 from selenium.common.exceptions import InvalidArgumentException
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.command import Command
 from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
@@ -18,6 +19,12 @@ from selenium_trio.extras.drawing import DrawingMixin
 from selenium_trio.remote_connection import AsyncFirefoxRemoteConnection
 from selenium_trio.remote_webelement import AsyncRemoteWebElement
 from selenium_trio.util import get_page_height, scroll_to, RelativeBy
+
+NEXUS_5_USER_AGENT = "Mozilla/5.0 (Linux; Android 4.2.1; en-us; Nexus 5 Build/JOP40D) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/535.19"
+IPHONEX_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1"
+
+NEXUS_METRICS = {"width": 360, "height": 640, "pixelRatio": 3.0}
+IPHONE_METRICS = {"width": 375, "height": 812, "pixelRatio": 3.0}
 
 
 class TrioAsyncDriver(RemoteWebDriver, DrawingMixin):
@@ -39,22 +46,42 @@ class TrioAsyncDriver(RemoteWebDriver, DrawingMixin):
         self.session_base_url = self.url = f'{command_executor._url}/session/{session_id}'
         self.session_id = session_id
         self.w3c = True
-
+        self.is_mobile = False
         self.canvas_added = False
 
     @classmethod
-    async def create_local_driver(cls):
+    async def create_local_driver(cls, mobile=False):
 
         def _create_new_driver_connection():
-            driver = webdriver.Firefox()
-            return driver, driver.command_executor._url
+            '''
+            user_agent = "Mozilla/5.0 (iPhone; U; CPU iPhone OS 3_0 like Mac OS X; en-us) AppleWebKit/528.18 (KHTML, like Gecko) Version/4.0 Mobile/7A341 Safari/528.16"
+
+            profile = webdriver.FirefoxProfile()
+            profile.set_preference("general.useragent.override", user_agent)
+            driver = webdriver.Firefox(profile)
+            driver.set_window_size(360, 640)
+            '''
+
+            if mobile:
+                chrome_options = Options()
+                chrome_options.add_experimental_option("mobileEmulation",  {"deviceName": "iPhone X"})
+                d = webdriver.Chrome(chrome_options=chrome_options)
+                d.execute_script("document.body.style.zoom='100%';")
+                d.set_window_size(375, 812)
+            else:
+                d = webdriver.Firefox()
+            return d, d.command_executor._url
 
         driver_obj, command_executor_url = await trio.to_thread.run_sync(
             _create_new_driver_connection
         )
-        driver = await cls.connect_to_remote(command_executor_url, driver_obj.session_id)
+        import pdb; pdb.set_trace()
+        driver = await cls.connect_to_remote(
+            command_executor_url, driver_obj.session_id, mobile=mobile
+        )
         # retain underlying driver object so it doesn't get garbage collected
         driver.d = driver_obj
+        driver.is_mobile = mobile
         return driver
 
     @classmethod
@@ -77,8 +104,13 @@ class TrioAsyncDriver(RemoteWebDriver, DrawingMixin):
         return driver
 
     @classmethod
-    async def connect_to_remote(cls, command_executor_url, session_id):
-        capabilities = {"browserName": "firefox"}
+    async def connect_to_remote(cls, command_executor_url, session_id, mobile=False):
+        if mobile:
+            chrome_options = Options()
+            chrome_options.add_experimental_option("mobileEmulation", {"deviceName": "iPhone X"})
+            capabilities = chrome_options.to_capabilities()
+        else:
+            capabilities = {"browserName": "firefox"}
         command_executor_obj = AsyncFirefoxRemoteConnection(command_executor_url, True)
         return TrioAsyncDriver(
             command_executor=command_executor_obj,
